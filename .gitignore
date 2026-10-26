@@ -1,0 +1,10 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+.DS_Store
+
+# Local assignment materials and research; publish only implementation notes.
+/docs/*
+!/docs/implementation/
+/.whattheapp/
