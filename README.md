@@ -86,6 +86,8 @@ Run workflow on `main` retries a release. Server provisioning, required secrets,
 
 I kept the implementation small for one screen with at most 24 visible table rows. Local React hooks handle one fetch; the backend validates the fixture and prepares chart figures at startup.
 
+The repository also stays as one npm package: `src/` contains the web UI, `server/` contains the API and data preparation, and `shared/` contains the API contract and demo definitions. Express serves both the API and frontend, so one install, development command and production image fit the current scope. Separate web/server workspaces would give each package its own dependencies, but would also need package entry points and build coordination. The trade-off today is a shared dependency manifest and relative imports into `shared/`. I would revisit workspaces for another consumer of the shared contract, separate deployment needs, or stronger dependency boundaries; see the [repository layout decision](docs/implementation/architecture.md#17-repository-layout-and-workspaces).
+
 I would add the changes below as the product grows. None is implemented today.
 
 | Area | Current choice | When I would change it |

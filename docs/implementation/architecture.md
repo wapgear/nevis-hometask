@@ -66,3 +66,22 @@ The hierarchy remains a native table with column and row headers. Disclosure but
 Chart buttons expose scope, month, totals, series values, and excess values in their accessible names. Tooltips work with mouse, keyboard, and tap. Scroll containers have labels, visible focus is retained, and reduced-motion preferences are respected.
 
 Automated Chromium checks and visual browser inspection are useful evidence; VoiceOver/NVDA and Firefox/Safari remain follow-up verification.
+
+## 1.7. Repository layout and workspaces
+
+The application uses one private npm package with source-level separation:
+
+```text
+src/       React UI, presentation hooks and styles
+server/    Express API, source validation and data preparation
+shared/    API contract, runtime response validation and demo definitions
+e2e/       Browser and API checks
+```
+
+The frontend and backend have separate build outputs (`dist/` and `build/`) but ship together. Express hosts Vite middleware during development and serves the built frontend in production. One root manifest, lockfile and set of commands match that lifecycle. Keeping this layout avoids introducing package entry points, local package dependencies and build coordination for one screen and its API.
+
+The cost is that frontend and backend dependencies share a manifest. The production image installs that combined runtime dependency set, including React even though Node only serves its built assets. Shared modules are imported by relative path, and package manifests do not enforce which layer may depend on which. The directories communicate ownership, but they do not provide package-level dependency boundaries.
+
+Workspaces would be useful if the API and frontend needed separate dependency sets or deployments, another application consumed the shared contract, or dependency boundaries became harder to maintain. A possible layout is `apps/web`, `apps/server` and `packages/contracts`, with explicit exports and build order for the shared package. Workspaces can also retain a single deployment; separate deployment is one possible reason to adopt them, rather than a prerequisite.
+
+Choosing workspaces and choosing pnpm are separate decisions: both [npm](https://docs.npmjs.com/cli/v11/using-npm/workspaces/) and [pnpm](https://pnpm.io/workspaces) support multiple local packages. npm already supports the current install, CI and Docker flow. For this take-home, the benefits of changing package management and introducing workspaces do not yet justify migrating those paths. Revisit that choice when a concrete package boundary needs it.
