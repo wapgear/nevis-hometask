@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --include 'server/**/*.json' server/index.ts",
-    "build": "tsc --noEmit && vite build",
-    "start": "tsx server/index.ts --production",
+    "build": "tsc --noEmit && vite build && npm run build:server",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/copy-server-assets.mjs",
+    "start": "node build/server/index.js --production",
     "lint": "eslint . --max-warnings=0",
     "test": "playwright test",
     "test:a11y": "playwright test e2e/accessibility.spec.ts",

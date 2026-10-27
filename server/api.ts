@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { parseDemoScenario } from "../shared/demo";
+import { parseDemoScenario } from "../shared/demo.js";
 
 export function createApiRouter(clients: Buffer): Router {
   const router = Router({ caseSensitive: true, strict: true });

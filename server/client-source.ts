@@ -1,4 +1,4 @@
-import { CHANNEL_NAMES, type ClientKind } from "../shared/clients";
+import { CHANNEL_NAMES, type ClientKind } from "../shared/clients.js";
 
 export interface SourceClientNode {
   id: string;

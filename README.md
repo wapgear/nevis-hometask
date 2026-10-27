@@ -13,14 +13,60 @@ npm run dev
 
 Development automatically restarts the server when backend code, imported shared modules, or `server/**/*.json` fixtures change. Vite continues to hot-reload frontend changes.
 
-Open [the dashboard on port 5180](http://127.0.0.1:5180). One process serves the application and `GET /api/clients`. The response contains `{ months, data }`: ordered `YYYY-MM` reporting months and the company hierarchy. Each node’s values and chart rows align with those months; `data: null` represents an empty dataset. The API supplies node kinds, avatar URLs, chart channel aggregates, remaining balances, discrepancy flags, and unavailable-channel rows. Employee portraits are stored under `server/avatars` and served by the backend; the browser uses the supplied `avatarUrl` or renders initials when it is null or fails to load. Stop it with Ctrl+C. For a production preview, stop development first, then:
+Open [the dashboard on port 5180](http://127.0.0.1:5180). One process serves the application and `GET /api/clients`. The response contains `{ months, data }`: ordered `YYYY-MM` reporting months and the company hierarchy. Each node’s values and chart rows align with those months; `data: null` represents an empty dataset. The API supplies node kinds, avatar URLs, chart channel aggregates, remaining balances, discrepancy flags, and unavailable-channel rows. Employee portraits are stored under `server/avatars` and served by the backend; the browser uses the supplied `avatarUrl` or renders initials when it is null or fails to load. Stop it with Ctrl+C. To run the production build, stop development first, then:
 
 ```sh
 npm run build
 npm start
 ```
 
-Production preview also uses port **5180**. `PORT` can override it; an occupied port fails explicitly.
+The build writes frontend assets to `dist/` and compiled backend code, the dataset, and portraits to `build/`. Production runs with Node directly, without Vite or `tsx`. Both modes use port **5180** by default. `PORT` can override it; an occupied port fails explicitly. `HOST` defaults to `127.0.0.1`; containers set it to `0.0.0.0`. `GET /healthz` returns `{ "status": "ok" }` once the dataset has loaded and the server accepts requests.
+
+## Docker
+
+### Development
+
+With Docker Engine and Docker Compose running:
+
+```sh
+docker compose up
+```
+
+Open [the dashboard on port 5180](http://127.0.0.1:5180). Compose mounts the source for frontend hot reload and backend/fixture restarts, and enables polling for Docker Desktop file changes. A named volume keeps container dependencies separate from the host's `node_modules`. Dependencies install from the lockfile on each start; after changing dependencies, run `docker compose restart app`. No host Node installation is needed. To use another host port, run `PORT=5181 docker compose up`; the container still listens on 5180.
+
+Stop with Ctrl+C or `docker compose down`. To remove the dependency volume as well, use `docker compose down --volumes`.
+
+### Production
+
+```sh
+docker build -t nevis-dashboard:local .
+docker run -d --name nevis-dashboard --restart unless-stopped \
+  -p 127.0.0.1:5180:5180 nevis-dashboard:local
+```
+
+The multi-stage image includes production dependencies, compiled code, and application assets, and runs as a non-root user. It serves the dashboard, API, and portraits from one process and checks `/healthz` for readiness. There are no required volumes or secrets. Set `PORT` with `-e PORT=8080` and map the same container port if your host requires a different one. Run development and production separately, or map production to a different host port.
+
+On a server, put an HTTPS reverse proxy in front of `127.0.0.1:5180`. The loopback port binding keeps the application reachable through that proxy; if the proxy runs in another container, connect both containers over a Docker network instead. Tag deployment images with a release or Git commit so a previous image can be restarted for rollback. `docker logs nevis-dashboard` shows application logs. The restart policy handles process exits; an unhealthy status alone does not restart a standalone Docker container.
+
+### Deployment to nevis.izmailov.dev
+
+GitHub Actions verifies the production ARM64 image with lint, build/type checks, and the browser/HTTP suite. Successful pushes to `main` publish a commit-tagged image to `ghcr.io/wapgear/nevis-hometask` and deploy its immutable digest to the existing VPS. Pull requests verify the image without deploying; **Run workflow** on `main` retries a deployment.
+
+The server runs `compose.production.yaml` from `/home/deploy/nevis-hometask` as the **nevis** Compose project, with a 256 MiB memory limit, half a CPU, and a read-only filesystem. Its only shared infrastructure is Caddy's existing `personal-api_default` Docker network. The unique `nevis-dashboard` alias lets Caddy route traffic without exposing another host port. The API and database containers are never included in Nevis deploy commands.
+
+Repository variables are `VPS_HOST`, `VPS_USER`, `VPS_SSH_PORT`, and `VPS_KNOWN_HOSTS`. `VPS_SSH_KEY` is a dedicated repository secret; its authorized key is restricted to the server-owned `deploy/deploy.sh` command, with no shell or forwarding access. Each deployment uses a temporary Docker login configuration and removes it afterward, leaving other deployments' registry credentials alone. A deployment lock serializes releases, and a failed container health check restores the previous image.
+
+One-time server provisioning installs `compose.production.yaml` and `deploy/deploy.sh` in the deployment directory. Changes to those server-owned files require an operator to sync them; ordinary app releases need only a push to `main`. The Caddy block in `deploy/Caddyfile.nevis` is installed in the existing proxy configuration and mirrored in `personal-api/docker/Caddyfile` so later API deployments preserve the route. Caddy validates and reloads its configuration without restarting the API or database.
+
+To inspect a release on the VPS:
+
+```sh
+cd /home/deploy/nevis-hometask
+docker compose --project-name nevis --env-file .env -f compose.production.yaml ps
+docker compose --project-name nevis --env-file .env -f compose.production.yaml logs --tail 100
+```
+
+For manual rollback, set `NEVIS_IMAGE` to the digest in `.env.previous`, then run the same scoped Compose command with `up -d --wait`. Successful releases retain the previous digest in `.env.previous`. No Nevis operation prunes shared Docker images or runs commands against the personal-api Compose project.
 
 ## Use
 

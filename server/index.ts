@@ -4,13 +4,13 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import type { ErrorRequestHandler } from "express";
-import { createServer as createViteServer } from "vite";
 import type { ViteDevServer } from "vite";
 
-import { createApiRouter } from "./api";
-import { loadClients } from "./clients";
+import { createApiRouter } from "./api.js";
+import { loadClients } from "./clients.js";
 
 const port = Number(process.env.PORT ?? 5180);
+const host = process.env.HOST ?? "127.0.0.1";
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("PORT must be an integer between 1 and 65535.");
 }
@@ -23,6 +23,9 @@ app.disable("etag");
 app.use((_request, response, next) => {
   response.set("X-Content-Type-Options", "nosniff");
   next();
+});
+app.get("/healthz", (_request, response) => {
+  response.set("Cache-Control", "no-store").json({ status: "ok" });
 });
 app.use("/api", createApiRouter(clients));
 app.use((request, response, next) => {
@@ -44,6 +47,7 @@ let vite: ViteDevServer | null = null;
 if (isProduction) {
   app.use(express.static(resolve("dist"), { redirect: false, fallthrough: false }));
 } else {
+  const { createServer: createViteServer } = await import("vite");
   vite = await createViteServer({
     appType: "spa",
     configFile: resolve("vite.config.ts"),
@@ -78,8 +82,8 @@ server.on("error", async (error) => {
   process.exitCode = 1;
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`Nevis dashboard: http://127.0.0.1:${port}`);
+server.listen(port, host, () => {
+  console.log(`Nevis dashboard: http://${host}:${port}`);
 });
 
 let shutdownPromise: Promise<void> | null = null;

@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+test("reports readiness without caching the response", async ({ request }) => {
+  const response = await request.get("/healthz");
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  expect(await response.json()).toEqual({ status: "ok" });
+});
+
 test("keeps the clients API read-only with uncached GET and body-free HEAD responses", async ({ request }) => {
   const get = await request.get("/api/clients?report=all");
   expect(get.status()).toBe(200);

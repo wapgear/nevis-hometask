@@ -1,0 +1,133 @@
+name: Verify and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nevis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify production image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx playwright install --with-deps chromium
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build production image
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          load: true
+          tags: nevis:verify
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start production image
+        run: |
+          docker run -d --name nevis-verify --memory=256m --cpus=0.5 \
+            --read-only --tmpfs /tmp:size=16m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -p 127.0.0.1:5180:5180 nevis:verify
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5180/healthz; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs nevis-verify
+          exit 1
+      - name: Run browser and HTTP checks against the production container
+        env:
+          CI: ""
+        run: npm test -- --workers=2
+      - name: Production container logs
+        if: always()
+        run: docker logs nevis-verify 2>&1 || true
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-failures
+          path: test-results/
+          retention-days: 7
+
+  publish:
+    name: Publish ARM64 image
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified image
+        id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy Nevis
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    environment:
+      name: production
+      url: https://nevis.izmailov.dev
+    steps:
+      - name: Deploy through the restricted SSH command
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_SSH_PORT }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          DEPLOY_KEY: ${{ secrets.VPS_SSH_KEY }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/nevis-deploy-key"
+          hosts="$RUNNER_TEMP/nevis-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$hosts"
+          printf '%s\n' "$IMAGE" "$GITHUB_ACTOR" "$GHCR_TOKEN" | \
+            ssh -T -i "$key" -p "$VPS_PORT" \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$hosts" -o ConnectTimeout=15 \
+              "$VPS_USER@$VPS_HOST"
+      - name: Verify public HTTPS
+        run: |
+          curl --fail --show-error --silent --retry 12 --retry-delay 5 --retry-all-errors \
+            https://nevis.izmailov.dev/healthz

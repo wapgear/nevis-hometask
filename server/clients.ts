@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { CHANNEL_NAMES, childrenOf, parseClients, type ClientNode, type ClientsDataset } from "../shared/clients";
-import { parseClientSource, type SourceClientNode } from "./client-source";
+import { CHANNEL_NAMES, childrenOf, parseClients, type ClientNode, type ClientsDataset } from "../shared/clients.js";
+import { parseClientSource, type SourceClientNode } from "./client-source.js";
 
 export function createClientsDataset(source: unknown): ClientsDataset {
   const { months, data } = parseClientSource(source);
