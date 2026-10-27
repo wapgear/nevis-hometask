@@ -25,9 +25,11 @@ export function createClientsDataset(source: unknown): ClientsDataset {
       const sum = values.reduce((a, b) => a + b, 0);
       return { known: values, missing: Math.max(0, total - sum), excess: Math.max(0, sum - total) };
     });
+    const reportedChildTotals = children.length > 0
+      ? months.map((_, month) => children.reduce((sum, child) => sum + child.values[month]!, 0))
+      : null;
     const hasReportedMismatch = children.some((child) => child.hasReportedMismatch) ||
-      (children.length > 0 && node.values.some((total, month) =>
-        children.reduce((sum, child) => sum + child.values[month]!, 0) !== total));
+      (reportedChildTotals?.some((total, month) => total !== node.values[month]) ?? false);
     const unavailableChannels = node.kind === "employee" && children.length === 0
       ? CHANNEL_NAMES.map((name) => ({
         id: `${node.id}:channel:${name}`,
@@ -47,6 +49,7 @@ export function createClientsDataset(source: unknown): ClientsDataset {
       ...(node.employees ? { employees: children } : {}),
       ...(node.channels ? { channels: children } : {}),
       chart,
+      reportedChildTotals,
       hasReportedMismatch,
       unavailableChannels,
     };

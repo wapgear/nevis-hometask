@@ -1,0 +1,13 @@
+.retry {
+  min-height: 40px;
+  margin-top: 24px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+
+  &:hover {
+    background: var(--focus);
+  }
+}

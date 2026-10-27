@@ -7,7 +7,6 @@ export interface HierarchyRowProps {
   ancestors: string;
   hasChildren: boolean;
   expanded: boolean;
-  exiting: boolean;
   rowIndex: number;
   rowCount: number;
   chartSelected: boolean;

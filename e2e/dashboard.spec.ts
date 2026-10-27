@@ -2,6 +2,74 @@ import { expect, test } from "./fixtures";
 import { expectedRows, expectedScopeLabels } from "./data/assignment";
 import { createClientsDataset } from "../server/clients";
 
+test("shows parent and child discrepancies without rewriting the reported figures", async ({ page, request, dashboard }) => {
+  const { data } = await (await request.get("/api/clients")).json();
+  expect(data.reportedChildTotals[3]).toBe(279);
+  expect(data.branches[0].reportedChildTotals[6]).toBe(216);
+  expect(data.branches[1].reportedChildTotals).toBeNull();
+  await dashboard.goto();
+  const details = page.getByRole("region", { name: "Data discrepancy details" });
+  const summary = page.locator("summary");
+  await expect(summary).toHaveText("Data discrepancies for Company");
+  await summary.click();
+  await expect(details).toContainText("May 2024: reported total 301; branch total 279.");
+  await expect(details).toContainText("There are also discrepancies at lower levels.");
+  await dashboard.legendButton("Unknown channel").click();
+  await expect(details).toContainText("May 2024: reported total 301; branch total 279.");
+  await dashboard.selectScope({ label: "Branch: Branch 1" });
+  await expect(details).toBeHidden();
+  await summary.click();
+  await expect(details).toContainText("Aug 2024: reported total 214; advisor total 216.");
+  await dashboard.selectScope({ label: "Employee: Anna Blackwood" });
+  await summary.click();
+  await expect(details).toContainText("Sep 2024: reported total 27; channel total 28.");
+  await expect(details).toContainText("The chart preserves the channel figures.");
+  await dashboard.selectScope({ label: "Branch: Branch 2" });
+  await expect(summary).toHaveCount(0);
+});
+
+test("explains a discrepancy below a level whose own totals reconcile", async ({ page, dashboard }) => {
+  await page.route("**/api/clients", (route) => route.fulfill({ json: createClientsDataset({
+    months: ["2024-02"],
+    data: {
+      id: "company", name: "Company", values: [10],
+      branches: [{ id: "branch", name: "Branch", values: [10], employees: [{ id: "advisor", name: "Advisor", values: [7] }] }],
+    },
+  }) }));
+  await dashboard.goto();
+  await page.locator("summary").click();
+  const details = page.getByRole("region", { name: "Data discrepancy details" });
+  await expect(details).toContainText("There are also discrepancies at lower levels.");
+  await expect(details.getByRole("listitem")).toHaveCount(0);
+});
+
+test("keeps full hierarchy labels readable and monthly cells aligned at narrow widths", async ({ page, request, dashboard }, testInfo) => {
+  const clients = await (await request.get("/api/clients")).json();
+  const longName = "Alexandria Verylongunbrokenadvisornamethatmustwrapwithoutclipping";
+  clients.data.branches[0].employees[1].name = longName;
+  await page.route("**/api/clients", (route) => route.fulfill({ json: clients }));
+  for (const width of [375, 320]) {
+    await page.setViewportSize({ width, height: 812 });
+    await dashboard.goto();
+    await dashboard.expand("Branch 1");
+    await dashboard.expand("Anna Blackwood");
+    for (const name of ["Anna Blackwood", "Existing clients", "New organic", "New paid", longName, "Maria Gutierrez", "Robert Chen", "Sarah Smith"]) {
+      const label = dashboard.hierarchy.getByText(name, { exact: true });
+      await expect(label).toBeVisible();
+      expect(await label.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const row = element.closest("tr")!;
+        const header = row.querySelector("th")!.getBoundingClientRect();
+        return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1 &&
+          bounds.left >= header.left && bounds.right <= header.right &&
+          [...row.querySelectorAll("td")].every((cell) => Math.abs(cell.getBoundingClientRect().height - header.height) < 1);
+      }), `${name} must fit its row without clipping`).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await testInfo.attach(`hierarchy-${width}px`, { body: await dashboard.hierarchy.screenshot(), contentType: "image/png" });
+  }
+});
+
 test("serves the assignment data through the REST API without rewriting totals", async ({
   request,
 }) => {
@@ -119,6 +187,9 @@ test("rejects missing or malformed API-owned chart and identity fields", async (
     (data: typeof original.data) => { data.chart[0].excess = "1"; },
     (data: typeof original.data) => { data.values[0] = 1.5; },
     (data: typeof original.data) => { data.hasReportedMismatch = "true"; },
+    (data: typeof original.data) => { delete data.reportedChildTotals; },
+    (data: typeof original.data) => { data.reportedChildTotals = [1]; },
+    (data: typeof original.data) => { data.reportedChildTotals[0] = -1; },
     (data: typeof original.data) => { data.kind = "employee"; },
     (data: typeof original.data) => { delete data.branches[0].employees[0].avatarUrl; },
     (data: typeof original.data) => { data.branches[0].employees[0].avatarUrl = "javascript:alert(1)"; },
@@ -393,22 +464,39 @@ test("toggles chart series with mouse and keyboard while preserving scope state"
   await expect(dashboard.status).toContainText("New organic: 1");
   await expect(dashboard.status).not.toContainText("Existing clients:");
   await expect(dashboard.status).not.toContainText("Unknown channel:");
-  await dashboard.selectScope({ label: "Branch: Branch 2" });
-  await expect(unknown).toHaveAttribute("aria-pressed", "false");
-  await expect(existing).toHaveAttribute("aria-pressed", "false");
-  await expect(bars.first()).toHaveAccessibleName(
-    "Feb 2024, Branch 2: 76 reported clients. New organic: 0. New paid: 0",
-  );
+  for (const [scope, total] of [["Branch: Branch 2", "76"], ["Employee: James Walker", "12"]] as const) {
+    await dashboard.selectScope({ label: scope });
+    await expect(unknown).toHaveAttribute("aria-pressed", "false");
+    await expect(existing).toHaveAttribute("aria-pressed", "false");
+    await expect(dashboard.legendButton("New organic")).toHaveAttribute("aria-pressed", "true");
+    await expect(dashboard.legendButton("New paid")).toHaveAttribute("aria-pressed", "true");
+    await expect(dashboard.status).toContainText("A little quiet here!");
+    await expect(bars).toHaveCount(0);
+    await expect(scale).toHaveCount(0);
+    await unknown.focus();
+    await page.keyboard.press("Space");
+    await expect(unknown).toBeFocused();
+    await expect(bars).toHaveCount(12);
+    await expect(bars.first().locator('[data-series="Unknown channel"]')).toHaveAttribute("data-value", total);
+    await page.keyboard.press("Space");
+    await expect(dashboard.status).toContainText("A little quiet here!");
+  }
   await dashboard.selectScope({ label: "Company: Company" });
+  await expect(bars).toHaveCount(12);
   await dashboard.legendButton("New organic").click();
   await dashboard.legendButton("New paid").click();
   for (const label of labels) {
     await expect(dashboard.legendButton(label)).toHaveAttribute("aria-pressed", "false");
-    await expect(bars.first().locator(`[data-series="${label}"]`)).toHaveCSS("height", "0px");
   }
-  await expect(bars.first()).toHaveAttribute("aria-label", /No channels shown/);
+  await expect(dashboard.status).toHaveText("A little quiet here! Pick a channel in the legend below to bring the chart to life.");
+  await expect(bars).toHaveCount(0);
+  await expect(scale).toHaveCount(0);
   await expect(legend.getByRole("button")).toHaveCount(4);
-  await unknown.click();
+  await unknown.focus();
+  await page.keyboard.press("Space");
+  await expect(unknown).toBeFocused();
+  await expect(dashboard.status).toHaveCount(0);
+  await expect(bars).toHaveCount(12);
   await expect(unknown).toHaveAttribute("aria-pressed", "true");
   await expect(bars.first().locator('[data-series="Unknown channel"]')).toHaveAttribute("data-value", "225");
 });
@@ -571,7 +659,8 @@ test("keeps chart controls in the viewport and scrolls the hierarchy locally", a
   await dashboard.goto();
   await expect(dashboard.collapseButton("Company")).toBeVisible();
   await dashboard.selectScope({ label: "Branch: Branch 2" });
-  for (const width of [320, 375, 768, 1280]) {
+  const scrollHint = page.getByText("Scroll horizontally to see all months.", { exact: true });
+  for (const width of [320, 375, 768, 1280, 1600, 1280]) {
     await test.step(`${width}px viewport`, async () => {
       await page.setViewportSize({ width, height: 800 });
       await expect(dashboard.resetChart).toBeVisible();
@@ -580,6 +669,13 @@ test("keeps chart controls in the viewport and scrolls the hierarchy locally", a
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth))
         .toBeLessThanOrEqual(width);
+      if (width === 1600) {
+        await expect(scrollHint).toHaveCount(0);
+        await expect(dashboard.hierarchy).not.toHaveAttribute("aria-describedby");
+      } else {
+        await expect(scrollHint).toBeVisible();
+        await expect(dashboard.hierarchy).toHaveAccessibleDescription("Scroll horizontally to see all months.");
+      }
       if (width <= 375) {
         await dashboard.hierarchy.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
         await expect.poll(() => dashboard.hierarchy.evaluate((element) => element.scrollLeft))

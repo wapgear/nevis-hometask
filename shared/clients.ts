@@ -26,6 +26,7 @@ export interface ClientNode {
   kind: ClientKind;
   avatarUrl: string | null;
   chart: ClientChartMonth[];
+  reportedChildTotals: number[] | null;
   hasReportedMismatch: boolean;
   unavailableChannels: UnavailableChannel[];
 }
@@ -96,6 +97,9 @@ export function parseClients(value: unknown): ClientsDataset {
       source.kind !== kinds[depth] ||
       !(source.values as unknown[]).every(isCount) ||
       !isAvatarUrl(source.avatarUrl) ||
+      !(source.reportedChildTotals === null ||
+        (Array.isArray(source.reportedChildTotals) && source.reportedChildTotals.length === months.length &&
+          source.reportedChildTotals.every(isCount))) ||
       typeof source.hasReportedMismatch !== "boolean" ||
       !Array.isArray(source.chart) || source.chart.length !== months.length ||
       !Array.isArray(source.unavailableChannels)
@@ -133,6 +137,7 @@ export function parseClients(value: unknown): ClientsDataset {
       kind: source.kind as ClientKind,
       avatarUrl: source.avatarUrl as string | null,
       chart,
+      reportedChildTotals: source.reportedChildTotals as number[] | null,
       hasReportedMismatch: source.hasReportedMismatch as boolean,
       unavailableChannels,
       ...(childrenKey === "branches" ? { branches: children } : {}),

@@ -39,6 +39,14 @@ test("has no automated accessibility violations in the interactive dashboard sta
   await dashboard.bars.nth(7).focus();
   await expect(dashboard.status).toContainText("Channel sum exceeds reported total by 1");
   await audit(page, testInfo, "tooltip-and-discrepancy");
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const label of ["Existing clients", "New organic", "New paid"]) {
+    await dashboard.legendButton(label).click();
+  }
+  await expect(dashboard.status).toContainText("A little quiet here!");
+  await expect(dashboard.bars).toHaveCount(0);
+  await audit(page, testInfo, "no-channels-selected");
 });
 
 test("has no automated accessibility violations in demo, error, and empty states", async ({ page, dashboard }, testInfo) => {
@@ -63,7 +71,7 @@ test("keeps every keyboard stop visible and unobscured on desktop and at 400% re
         await page.setViewportSize({ width, height });
         await dashboard.goto(url);
         await expect(dashboard.collapseButton("Company")).toBeVisible();
-        const count = await page.locator("button, select, [tabindex='0']").evaluateAll((elements) =>
+        const count = await page.locator("button, select, summary, [tabindex='0']").evaluateAll((elements) =>
           elements.filter((element) => {
             const rect = element.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0 && !element.closest("[inert]");
@@ -75,7 +83,7 @@ test("keeps every keyboard stop visible and unobscured on desktop and at 400% re
           const focused = page.locator(":focus");
           await expect(focused).toBeInViewport();
           visited.add(await focused.evaluate((element) =>
-            [...document.querySelectorAll("button, select, [tabindex='0']")].indexOf(element),
+            [...document.querySelectorAll("button, select, summary, [tabindex='0']")].indexOf(element),
           ));
           expect(await focused.evaluate((element) => {
             const rect = element.getBoundingClientRect();
@@ -121,31 +129,31 @@ test("exposes table headers, missing data, chart names, and selection state to a
   await testInfo.attach("screen-reader-semantics", { body: await page.locator("main").ariaSnapshot(), contentType: "text/plain" });
 });
 
-test("preserves keyboard focus after resetting the chart and dismissing its notice", async ({ page, dashboard }) => {
+test("preserves keyboard focus after resetting the chart", async ({ page, dashboard }) => {
   await dashboard.goto();
   await dashboard.selectScope({ label: "Employee: Anna Blackwood" });
-  const dismiss = page.getByRole("button", { name: "Dismiss data notice", exact: true });
-  await dismiss.focus();
-  await page.keyboard.press("Enter");
-  await expect(dismiss).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Clients", exact: true })).toBeFocused();
-
   await dashboard.resetChart.focus();
   await page.keyboard.press("Enter");
   await expect(dashboard.resetChart).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Clients", exact: true })).toBeFocused();
 });
 
-test("dismisses a floating data notice with Escape while keeping the current control focused", async ({ page, dashboard }) => {
+test("opens and closes discrepancy details with the keyboard without losing focus", async ({ page, dashboard }, testInfo) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await dashboard.goto();
   await dashboard.selectScope({ label: "Employee: Anna Blackwood" });
-  const action = page.getByRole("button", { name: "Show chart for Anna Blackwood", exact: true });
-  await expect(action).toBeFocused();
-  await expect(page.getByRole("region", { name: "Data discrepancy details" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("region", { name: "Data discrepancy details" })).toHaveCount(0);
-  await expect(action).toBeFocused();
+  const summary = page.locator("summary").filter({ hasText: "Data discrepancies for Anna Blackwood" });
+  const details = page.getByRole("region", { name: "Data discrepancy details" });
+  await expect(details).toBeHidden();
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("Sep 2024: reported total 27; channel total 28.");
+  await expect(summary).toBeFocused();
+  await audit(page, testInfo, "expanded-discrepancies");
+  await page.keyboard.press("Space");
+  await expect(details).toBeHidden();
+  await expect(summary).toBeFocused();
 });
 
 test("announces loading and recovery without losing the retry keyboard position", async ({ page, dashboard }, testInfo) => {

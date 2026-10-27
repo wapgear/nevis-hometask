@@ -1,15 +1,16 @@
 import styles from "../Clients.module.scss";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { useAnimatedNumber } from "../../../hooks/useAnimatedNumber";
 import { chartData, chartSeriesLabels } from "../Clients.utils";
 import type { MonthlyChartProps } from "./MonthlyChart.types";
 import { MonthlyChartBar } from "./MonthlyChartBar.component";
 import { MonthlyChartTooltip } from "./MonthlyChartTooltip.component";
-import { useAnimatedNumber } from "./hooks/useAnimatedNumber";
 
 export function MonthlyChart({ node, months, hiddenSeries, onToggleSeries }: MonthlyChartProps) {
   const rows = chartData(node, months, hiddenSeries);
   const scope = node.name;
+  const hasVisibleData = rows.some((row) => row.plotted > 0);
 
   const [activeBar, setActiveBar] = useState<{ scopeId: string; index: number } | null>(null);
   const active = activeBar?.scopeId === node.id ? activeBar.index : null;
@@ -90,33 +91,39 @@ export function MonthlyChart({ node, months, hiddenSeries, onToggleSeries }: Mon
         <div
           className={styles["chart-scroll"]}
           data-chart-scroll
-          tabIndex={0}
-          role="region"
-          aria-label="Monthly chart; scroll horizontally on smaller screens"
+          tabIndex={hasVisibleData ? 0 : undefined}
+          role={hasVisibleData ? "region" : undefined}
+          aria-label={hasVisibleData ? "Monthly chart; scroll horizontally on smaller screens" : undefined}
         >
-          <div className={styles["plot"]}>
-            <div className={styles["grid-lines"]} aria-hidden="true" data-chart-scale>
-              {[4, 3, 2, 1, 0].map((tick) => (
-                <div className={styles["grid-line"]} key={tick}>
-                  <span>{Math.round((displayedMaximum * tick) / 4)}</span>
+          <div className={[styles.plot, !hasVisibleData && styles["chart-empty"]].filter(Boolean).join(" ")}>
+            {!hasVisibleData ? (
+              <p role="status">A little quiet here! Pick a channel in the legend below to bring the chart to life.</p>
+            ) : (
+              <>
+                <div className={styles["grid-lines"]} aria-hidden="true" data-chart-scale>
+                  {[4, 3, 2, 1, 0].map((tick) => (
+                    <div className={styles["grid-line"]} key={tick}>
+                      <span>{Math.round((displayedMaximum * tick) / 4)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className={styles["bars"]}>
-              {rows.map((row, i) => (
-                <MonthlyChartBar
-                  key={row.month}
-                  row={row}
-                  maximum={maximum}
-                  scope={scope}
-                  onActivate={() => {
-                    cancelDismiss();
-                    setActiveBar({ scopeId: node.id, index: i });
-                  }}
-                  onDeactivate={scheduleDismiss}
-                />
-              ))}
-            </div>
+                <div className={styles["bars"]}>
+                  {rows.map((row, i) => (
+                    <MonthlyChartBar
+                      key={row.month}
+                      row={row}
+                      maximum={maximum}
+                      scope={scope}
+                      onActivate={() => {
+                        cancelDismiss();
+                        setActiveBar({ scopeId: node.id, index: i });
+                      }}
+                      onDeactivate={scheduleDismiss}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
         <figcaption>
@@ -137,7 +144,7 @@ export function MonthlyChart({ node, months, hiddenSeries, onToggleSeries }: Mon
             ))}
           </ul>
         </figcaption>
-        {current && (
+        {hasVisibleData && current && (
           <MonthlyChartTooltip
             ref={tooltipRef}
             row={current}

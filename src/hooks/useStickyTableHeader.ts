@@ -13,7 +13,7 @@ export function useStickyTableHeader(scrollRef: RefObject<HTMLDivElement | null>
       if (!container || !header) return;
       const bounds = container.getBoundingClientRect();
       const offset = Math.max(0, Math.min(-bounds.top, container.clientHeight - header.clientHeight));
-      container.style.setProperty("--hierarchy-header-offset", `${offset}px`);
+      container.style.setProperty("--table-header-offset", `${offset}px`);
     }
     function scheduleUpdate() {
       if (!frame) frame = requestAnimationFrame(updateOffset);
@@ -32,7 +32,7 @@ export function useStickyTableHeader(scrollRef: RefObject<HTMLDivElement | null>
       observer.disconnect();
       window.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
-      container.style.removeProperty("--hierarchy-header-offset");
+      container.style.removeProperty("--table-header-offset");
     };
   }, [scrollRef]);
 }

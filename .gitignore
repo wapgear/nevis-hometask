@@ -5,7 +5,8 @@ playwright-report/
 test-results/
 .DS_Store
 
-# Local assignment materials and research; publish only implementation notes.
+# Local assignment materials and research; publish the index and implementation notes.
 /docs/*
+!/docs/README.md
 !/docs/implementation/
 /.whattheapp/

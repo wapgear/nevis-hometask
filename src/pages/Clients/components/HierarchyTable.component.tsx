@@ -1,19 +1,20 @@
 import styles from "../Clients.module.scss";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties, FocusEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { FocusEvent } from "react";
 
+import { useStickyTableHeader } from "../../../hooks/useStickyTableHeader";
+import { useTableOverflow } from "../../../hooks/useTableOverflow";
 import { formatMonth, reportingRange } from "../Clients.utils";
 import { HierarchyRow } from "./HierarchyRow.component";
 import type { HierarchyTableProps } from "./HierarchyTable.types";
 import { useClientHierarchy } from "./hooks/useClientHierarchy";
-import { hierarchyMotionDuration, useAnimatedHierarchyRows } from "./hooks/useAnimatedHierarchyRows";
-import { useStickyTableHeader } from "./hooks/useStickyTableHeader";
 
 export function HierarchyTable({ root, months, selectedId, onSelectChart }: HierarchyTableProps) {
   const { rows, toggle } = useClientHierarchy(root);
-  const animatedRows = useAnimatedHierarchyRows(rows);
   const scrollRef = useRef<HTMLDivElement>(null);
   useStickyTableHeader(scrollRef);
+  const hasOverflow = useTableOverflow(scrollRef);
+  const scrollHintId = useId();
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const focusedAncestorsRef = useRef<string[]>([]);
 
@@ -73,10 +74,10 @@ export function HierarchyTable({ root, months, selectedId, onSelectChart }: Hier
       <div
         ref={scrollRef}
         className={[styles["table-scroll"], styles["hierarchy"]].join(" ")}
-        style={{ "--hierarchy-motion-duration": `${hierarchyMotionDuration}ms` } as CSSProperties}
         data-hierarchy-scroll
         role="region"
         aria-label="Monthly client hierarchy, scroll horizontally for all months"
+        aria-describedby={hasOverflow ? scrollHintId : undefined}
         tabIndex={0}
         onFocusCapture={handleFocusCapture}
         onBlurCapture={handleBlurCapture}
@@ -106,7 +107,7 @@ export function HierarchyTable({ root, months, selectedId, onSelectChart }: Hier
             </tr>
           </thead>
           <tbody>
-            {animatedRows.map(({ row, exiting }) => (
+            {rows.map((row, index) => (
               <HierarchyRow
                 key={row.key}
                 node={row.node}
@@ -115,8 +116,7 @@ export function HierarchyTable({ root, months, selectedId, onSelectChart }: Hier
                 ancestors={row.ancestors}
                 hasChildren={row.hasChildren}
                 expanded={row.expanded}
-                exiting={exiting}
-                rowIndex={rows.findIndex((visible) => visible.key === row.key)}
+                rowIndex={index}
                 rowCount={rows.length}
                 chartSelected={selectedId === row.node.id}
                 onSelectChart={onSelectChart}
@@ -127,7 +127,9 @@ export function HierarchyTable({ root, months, selectedId, onSelectChart }: Hier
           </tbody>
         </table>
       </div>
-      <p className={styles["scroll-hint"]}>Scroll horizontally to see all months.</p>
+      {hasOverflow && (
+        <p id={scrollHintId} className={styles["scroll-hint"]}>Scroll horizontally to see all months.</p>
+      )}
     </section>
   );
 }

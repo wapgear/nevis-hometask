@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 
+import { ClientDataEmpty } from "./components/ClientDataEmpty.component";
+import { ClientDataError } from "./components/ClientDataError.component";
+import { ClientDataLoading } from "./components/ClientDataLoading.component";
 import { DemoControls } from "./components/DemoControls.component";
 import { HierarchyTable } from "./components/HierarchyTable.component";
 import { MonthlyChart } from "./components/MonthlyChart.component";
@@ -7,30 +10,22 @@ import { useClientChart } from "./hooks/useClientChart";
 import { useClients } from "./hooks/useClients";
 import { useDemoScenario } from "./hooks/useDemoScenario";
 import styles from "./Clients.module.scss";
-import { chartData, reportingRange, scopeLabel } from "./Clients.utils";
+import { childrenOf, formatMonth, reportingRange, scopeLabel } from "./Clients.utils";
 
 export function ClientsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [noticeDismissed, setNoticeDismissed] = useState(false);
   const { scenario, selectScenario } = useDemoScenario();
   const { state, retry } = useClients(scenario);
   const data = state.status === "ready" ? state.data : null;
   const months = state.status === "ready" ? state.months : [];
   const { selected, hiddenSeries, customized, selectScope, toggleSeries, resetChart } = useClientChart(data);
 
-  const excessMonths = selected ? chartData(selected, months).filter((row) => row.excess > 0) : [];
-  const showNotice = excessMonths.length > 0 && !noticeDismissed;
-
-  useEffect(() => {
-    if (!showNotice) return;
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (document.activeElement?.closest('[data-data-notice]')) headingRef.current?.focus();
-      setNoticeDismissed(true);
-    };
-    window.addEventListener("keydown", dismissOnEscape);
-    return () => window.removeEventListener("keydown", dismissOnEscape);
-  }, [showNotice]);
+  const discrepancies = selected?.reportedChildTotals?.flatMap((total, index) =>
+    total === selected.values[index] ? [] : [{ month: months[index]!, total, reported: selected.values[index]! }],
+  ) ?? [];
+  const excessMonths = selected?.chart.flatMap((row, index) => row.excess > 0 ? [formatMonth(months[index]!)] : []) ?? [];
+  const lowerLevelMismatch = selected ? childrenOf(selected).some((child) => child.hasReportedMismatch) : false;
+  const detailLabel = selected?.kind === "company" ? "Branch" : selected?.kind === "branch" ? "Advisor" : "Channel";
 
   return (
     <main className={styles.page} data-demo-mode={scenario ? true : undefined}>
@@ -57,7 +52,6 @@ export function ClientsPage() {
               className={styles["heading-action"]}
               onClick={() => {
                 resetChart();
-                setNoticeDismissed(false);
                 headingRef.current?.focus();
               }}
             >
@@ -69,72 +63,51 @@ export function ClientsPage() {
           )}
         </div>
       </header>
-      {state.status === "loading" && (
-        <section className={styles.state} role="status">
-          <span className={styles.spinner} aria-hidden="true" />
-          Loading client data…
-        </section>
-      )}
+      {state.status === "loading" && <ClientDataLoading />}
       {state.status === "error" && (
-        <section className={styles.state} role="alert">
-          <h2>Client data unavailable</h2>
-          <p>{state.message}</p>
-          <button type="button" onClick={() => {
+        <ClientDataError
+          message={state.message}
+          onRetry={() => {
             retry();
             headingRef.current?.focus();
-          }}>
-            Try again
-          </button>
-        </section>
+          }}
+        />
       )}
-      {state.status === "ready" && !data && (
-        <section className={styles.state} role="status">
-          <h2>No client data</h2>
-          <p>The API has no clients to display.</p>
-        </section>
-      )}
+      {state.status === "ready" && !data && <ClientDataEmpty />}
       {data && selected && (
         <>
           <MonthlyChart node={selected} months={months} hiddenSeries={hiddenSeries} onToggleSeries={toggleSeries} />
           <p className={styles["data-note"]}>
-            {selected.name} · {reportingRange(months)}. Hatched gray shows clients without a supplied
-            channel breakdown.
+            {selected.name} · {reportingRange(months)}. Hatched gray includes missing channel
+            breakdowns and unreconciled differences.
           </p>
-          {showNotice && (
-            <div className={styles["chart-warning"]} data-data-notice>
-              <p role="region" aria-label="Data discrepancy details" tabIndex={0}>
-                {excessMonths
-                  .map(
-                    (row) =>
-                      `${row.month}: channel figures total ${row.plotted}, while the reported total is ${row.total}`,
-                  )
-                  .join("; ")}
-                . The chart preserves the channel figures.
-              </p>
-              <button
-                type="button"
-                className={styles["notice-close"]}
-                aria-label="Dismiss data notice"
-                onClick={() => {
-                  setNoticeDismissed(true);
-                  headingRef.current?.focus();
-                }}
-              >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="m4 4 8 8M12 4l-8 8" />
-                </svg>
-              </button>
-            </div>
-          )}
           <HierarchyTable
             root={data}
             months={months}
             selectedId={selected.id}
-            onSelectChart={(id) => {
-              selectScope(id);
-              setNoticeDismissed(false);
-            }}
+            onSelectChart={selectScope}
           />
+          {(selected.hasReportedMismatch || excessMonths.length > 0) && (
+            <details key={selected.id} className={styles["data-discrepancies"]}>
+              <summary>Data discrepancies for {selected.name}</summary>
+              <div role="region" aria-label="Data discrepancy details">
+                <p>Reported totals and supplied detail do not always agree. Original figures are preserved.</p>
+                {discrepancies.length > 0 && (
+                  <ul>
+                    {discrepancies.map(({ month, total, reported }) => (
+                      <li key={month}>{formatMonth(month)}: reported total {reported}; {detailLabel.toLowerCase()} total {total}.</li>
+                    ))}
+                  </ul>
+                )}
+                {excessMonths.length > 0 && (
+                  <p>Channel figures exceed the reported total in {excessMonths.join(", ")}. The chart preserves the channel figures.</p>
+                )}
+                {lowerLevelMismatch && (
+                  <p>There are also discrepancies at lower levels. Select a branch or advisor chart to inspect its totals.</p>
+                )}
+              </div>
+            </details>
+          )}
         </>
       )}
     </main>

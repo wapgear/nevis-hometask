@@ -1,5 +1,5 @@
 import styles from "../Clients.module.scss";
-import type { KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 
 import { HierarchyName } from "./HierarchyName.component";
 import { ChartFilterAction } from "./ChartFilterAction.component";
@@ -12,7 +12,6 @@ export function HierarchyRow({
   ancestors,
   hasChildren,
   expanded,
-  exiting,
   rowIndex,
   rowCount,
   chartSelected,
@@ -45,16 +44,13 @@ export function HierarchyRow({
   return (
     <tr
       className={styles["hierarchy-row"]}
-      data-exiting={exiting || undefined}
-      aria-hidden={exiting || undefined}
-      inert={exiting || undefined}
       data-node-kind={node.kind}
       data-row-index={rowIndex}
       data-row-id={node.id}
     >
       <th scope="row" className={styles["hierarchy-name-cell"]}>
         <div className={styles["hierarchy-cell-content"]}>
-          <div className={styles["row-label"]} style={{ paddingInlineStart: `${depth * 28}px` }}>
+          <div className={styles["row-label"]} style={{ "--hierarchy-depth": depth } as CSSProperties}>
             {hasChildren ? (
               <button
                 type="button"
