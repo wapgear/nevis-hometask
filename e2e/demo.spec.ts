@@ -109,6 +109,8 @@ test("keeps floating controls in a narrow viewport and accessible by keyboard", 
   await page.keyboard.press("Enter");
   await expect(dashboard.demoState).toHaveValue("empty");
   await expect(dashboard.emptyState).toBeVisible();
+  // Linux Chromium opens the native popup on Enter; close it before tabbing onward.
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Tab");
   await expect(dashboard.reloadButton).toBeFocused();
   await page.keyboard.press("Enter");
